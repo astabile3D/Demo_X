@@ -8,6 +8,9 @@ on:
 jobs:
   odm:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,94 +20,92 @@ jobs:
         shell: bash
         run: |
           set -e
-          # prova 1: diff-tree sull'ultimo commit
+          # 1) file modificati in questo commit
           ID=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^uploads/' | head -n1 | cut -d'/' -f2 || true)
-          # prova 2: show sull'ultimo commit
+          # 2) fallback
           if [ -z "$ID" ]; then
             ID=$(git show --name-only --pretty="" "$GITHUB_SHA" | grep '^uploads/' | head -n1 | cut -d'/' -f2 || true)
           fi
-          # prova 3: cerca qualsiasi cartella sotto uploads modificata nel repo
+          # 3) ultimo folder in uploads
           if [ -z "$ID" ]; then
-            ID=$(git ls-tree -r --name-only HEAD | grep '^uploads/' | head -n1 | cut -d'/' -f2 || true)
+            ID=$(ls -1 uploads | head -n1 || true)
           fi
-          echo "ID=$ID"
-          if [ -z "$ID" ]; then
-            echo "Nessun ID trovato sotto uploads/. Interrompo."
-            exit 1
-          fi
-          echo "id=$ID" >> $GITHUB_OUTPUT
+          echo "id=$ID" >> "$GITHUB_OUTPUT"
+          test -n "$ID"
 
       - name: Init progress (0%)
-        run: |
-          set -e
-          ID=${{ steps.detect.outputs.id }}
-          mkdir -p items/$ID
-          echo '{"phase":"queued","percent":0,"msg":"In coda"}' > items/$ID/status.json
-          git config user.name "gh-actions"
-          git config user.email "actions@github.com"
-          git add items/$ID/status.json
-          git commit -m "[skip ci] status $ID 0%" || true
-          git push || true
-
-      - name: Prepare & install deps (ffmpeg)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Prepare images (10%) – from photos or extract frames from videos
         shell: bash
         run: |
           set -e
           ID=${{ steps.detect.outputs.id }}
-          mkdir -p work/$ID/images
+          mkdir -p items/"$ID"
+          echo '{"phase":"queued","percent":0,"msg":"In coda"}' > items/"$ID"/status.json
+          git config user.name "gh-actions"
+          git config user.email "actions@github.com"
+          git add items/"$ID"/status.json
+          git commit -m "[skip ci] status $ID 0%" || true
+          git push || true
 
-          # JPG già presenti
-          ls uploads/$ID/images/*.jpg 2>/dev/null && cp -R uploads/$ID/images/*.jpg work/$ID/images/ || true
-          ls uploads/$ID/*.jpg 2>/dev/null && cp -R uploads/$ID/*.jpg work/$ID/images/ || true
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
-          # Estrai frame dai video (3 fps, lato lungo 2048)
-          if ls uploads/$ID/videos/*.* >/dev/null 2>&1; then
-            for V in uploads/$ID/videos/*.*; do
-              ffmpeg -i "$V" -vf "fps=3,scale='min(2048,iw)':'-2'" work/$ID/images/v_%06d.jpg
+      - name: Prepare images (10%)
+        shell: bash
+        run: |
+          set -e
+          ID=${{ steps.detect.outputs.id }}
+          mkdir -p work/"$ID"/images
+
+          # Copia JPG esistenti
+          ls uploads/"$ID"/images/*.jpg 2>/dev/null && cp -R uploads/"$ID"/images/*.jpg work/"$ID"/images/ || true
+          ls uploads/"$ID"/*.jpg 2>/dev/null && cp -R uploads/"$ID"/*.jpg work/"$ID"/images/ || true
+
+          # Estrai frame dai video (3 fps, max 2048 px)
+          if ls uploads/"$ID"/videos/*.* >/dev/null 2>&1; then
+            for V in uploads/"$ID"/videos/*.*; do
+              ffmpeg -i "$V" -vf "fps=3,scale='min(2048,iw)':'-2'" work/"$ID"/images/v_%06d.jpg
             done
           fi
-          if [ -f "uploads/$ID/video.mp4" ] || [ -f "uploads/$ID/video.mov" ] || [ -f "uploads/$ID/video.webm" ]; then
-            V=$(ls uploads/$ID/video.* | head -n1)
-            ffmpeg -i "$V" -vf "fps=3,scale='min(2048,iw)':'-2'" work/$ID/images/v_%06d.jpg
+          if ls uploads/"$ID"/video.* >/dev/null 2>&1; then
+            V=$(ls uploads/"$ID"/video.* | head -n1)
+            ffmpeg -i "$V" -vf "fps=3,scale='min(2048,iw)':'-2'" work/"$ID"/images/v_%06d.jpg
           fi
 
-          COUNT=$(ls work/$ID/images/*.jpg 2>/dev/null | wc -l | tr -d ' ')
-          echo "IMMAGINI=$COUNT"
-
+          COUNT=$(ls work/"$ID"/images/*.jpg 2>/dev/null | wc -l | tr -d ' ')
           python - <<'PY'
-import json,os
-id=os.environ["ID"]
-open(f"items/{id}/status.json",'w').write(json.dumps({"phase":"prepare","percent":10,"msg":"Preparo immagini…"}))
+import json, os
+id = os.environ.get("ID")
+p = f"items/{id}/status.json"
+open(p, "w").write(json.dumps({"phase":"prepare","percent":10,"msg":"Preparo immagini…"}))
 PY
-          git add items/$ID/status.json
+          git add items/"$ID"/status.json
           git commit -m "[skip ci] status $ID 10%" || true
           git push || true
 
           if [ "$COUNT" -lt "20" ]; then
-            echo "ERRORE: meno di 20 immagini dopo la preparazione (COUNT=$COUNT)."
+            echo "ERRORE: meno di 20 immagini (COUNT=$COUNT)."
             exit 1
           fi
 
       - name: Run ODM (65%)
+        shell: bash
         run: |
           set -e
           ID=${{ steps.detect.outputs.id }}
-          docker run --rm -v $PWD/work/$ID:/datasets/code opendronemap/odm:latest \
+          docker run --rm -v "$PWD/work/$ID":/datasets/code opendronemap/odm:latest \
             --project-path /datasets \
             --fast-orthophoto \
             --texturing-nadir-weight 16 \
             --optimize-disk-space || true
           python - <<'PY'
-import json,os
-id=os.environ["ID"]
-open(f"items/{id}/status.json",'w').write(json.dumps({"phase":"mvs","percent":65,"msg":"Densificazione e mesh…"}))
+import json, os
+id = os.environ.get("ID")
+p = f"items/{id}/status.json"
+open(p, "w").write(json.dumps({"phase":"mvs","percent":65,"msg":"Densificazione e mesh…"}))
 PY
-          git add items/$ID/status.json
+          git add items/"$ID"/status.json
           git commit -m "[skip ci] status $ID 65%" || true
           git push || true
 
@@ -119,38 +120,40 @@ PY
           pip install trimesh pygltflib pillow
 
       - name: Convert OBJ to GLB (85%)
+        shell: bash
         run: |
           set -e
           ID=${{ steps.detect.outputs.id }}
-          mkdir -p items/$ID
+          mkdir -p items/"$ID"
           python scripts/prepare_glb.py "work/$ID/code/odm_texturing/odm_textured_model.obj" "items/$ID/model.glb"
-          cp items_template/index.html items/$ID/index.html || true
+          cp items_template/index.html items/"$ID"/index.html || true
           python - <<'PY'
-import json,os
-id=os.environ["ID"]
-open(f"items/{id}/status.json",'w').write(json.dumps({"phase":"convert","percent":85,"msg":"Conversione GLB…"}))
+import json, os
+id = os.environ.get("ID")
+p = f"items/{id}/status.json"
+open(p, "w").write(json.dumps({"phase":"convert","percent":85,"msg":"Conversione GLB…"}))
 PY
-          git add items/$ID/status.json items/$ID/index.html items/$ID/model.glb
+          git add items/"$ID"/status.json items/"$ID"/index.html items/"$ID"/model.glb
           git commit -m "[skip ci] status $ID 85% + files" || true
           git push || true
 
-      - name: Done (100%)
+      - name: Mark ready (100%)
+        shell: bash
         run: |
           set -e
           ID=${{ steps.detect.outputs.id }}
           if [ -f data/index.json ]; then
             python - <<'PY'
-import json,os
-id=os.environ["ID"]
-p='data/index.json'
-j=json.load(open(p))
+import json, os
+id = os.environ.get("ID")
+p = "data/index.json"
+j = json.load(open(p))
 for it in j:
-  if it.get('id')==id:
-    it['status']='ready'
-open(p,'w').write(json.dumps(j,indent=2))
-open(f"items/{id}/status.json",'w').write(json.dumps({"phase":"ready","percent":100,"msg":"Pronto"}))
+    if it.get("id") == id:
+        it["status"] = "ready"
+open(p, "w").write(json.dumps(j, indent=2))
+open(f"items/{id}/status.json", "w").write(json.dumps({"phase":"ready","percent":100,"msg":"Pronto"}))
 PY
-            git add data/index.json items/$ID/status.json
+            git add data/index.json items/"$ID"/status.json
             git commit -m "[skip ci] status $ID 100%" || true
             git push || true
-          fi
