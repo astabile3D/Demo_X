@@ -31,6 +31,7 @@
   dialog{border:1px solid var(--b);border-radius:12px;background:#111;color:#eee;padding:16px;max-width:520px}
   dialog::backdrop{background:rgba(0,0,0,.6)}
   label{display:block;margin:8px 0 4px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:600;margin-left:6px}
 </style>
 </head>
 <body>
@@ -91,9 +92,9 @@
         <li>⚙️ Configura repo/branch/token (salvati nel tuo browser).</li>
         <li>📷 Cattura 40–80 foto oppure carica video dell’oggetto.</li>
         <li>⬆️ Carica: parte automaticamente il workflow su GitHub Actions.</li>
-        <li>⏳ Segui lo stato in Elenco; a fine job trovi link pubblico + QR + varianti GLB/USZ.</li>
+        <li>⏳ Segui lo stato in Elenco; a fine job trovi link pubblico + QR + varianti GLB/USDZ.</li>
       </ol>
-      <p class="muted">Nota: USDZ è generato su base "best-effort" su Ubuntu; se gli strumenti non sono disponibili, viene saltato.</p>
+      <p class="muted">Nota: USDZ è best-effort su Ubuntu; se lo strumento non è disponibile, la variante può mancare.</p>
     </div>
   </section>
 </main>
@@ -136,56 +137,174 @@ updateRepoLabel();
 
 // ====== UTILS ======
 function b64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf)))}
-async function githubRequest(path,method,body){if(!configured())throw new Error('Config mancante.');const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`,{method,headers:{'Authorization':`token ${cfg.token}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw new Error(await r.text());return r.json()}
-async function getFileSha(path){const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}`,{headers:configured()?{'Authorization':`token ${cfg.token}`}:{}});if(r.status===404)return null;const j=await r.json();return j.sha}
-async function fetchJSON(url){const r=await fetch(url);if(!r.ok)return null;return r.json()}
+async function githubRequest(path,method,body){
+  if(!configured())throw new Error('Config mancante.');
+  const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`,{
+    method,
+    headers:{'Authorization':`token ${cfg.token}`,'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function getFileSha(path){
+  const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}`,{
+    headers:configured()?{'Authorization':`token ${cfg.token}`}:{}
+  });
+  if(r.status===404) return null;
+  const j=await r.json();
+  return j.sha;
+}
 function viewURL(id){return `https://${cfg.owner}.github.io/${cfg.repo}/items/${id}/index.html`}
 function statusURL(id){return `https://${cfg.owner}.github.io/${cfg.repo}/items/${id}/status.json?${Date.now()}`}
 function qrURL(id){return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(viewURL(id))}`}
 
 // ====== TABS ======
-document.querySelectorAll('.tab').forEach(t=>{t.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));t.classList.add('active');document.getElementById('panel-'+t.dataset.tab).classList.add('active');if(t.dataset.tab==='list')loadList();};});
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab==='list') loadList();
+  };
+});
 document.getElementById('refreshList').onclick=()=>loadList();
 
 // ====== CAPTURE ======
 const k_items=document.getElementById('k_items'),k_inprogress=document.getElementById('k_inprogress'),k_uploads=document.getElementById('k_uploads');
 const cam=document.getElementById('cam'),btnStart=document.getElementById('start'),btnShot=document.getElementById('shot'),btnFinish=document.getElementById('finish'),btnPick=document.getElementById('pick'),filepick=document.getElementById('filepick'),btnClear=document.getElementById('clearShots'),thumbs=document.getElementById('thumbs'),statusEl=document.getElementById('status'),titleEl=document.getElementById('title');
 let stream=null,shots=[],galleryFiles=[];
-function setStatus(t){statusEl.textContent=t}function updateKPI(){k_uploads.textContent=shots.length+galleryFiles.length}
+function setStatus(t){statusEl.textContent=t}
+function updateKPI(){k_uploads.textContent=shots.length+galleryFiles.length}
 btnClear.onclick=()=>{shots=[];galleryFiles=[];thumbs.innerHTML='';updateKPI();setStatus('Scatti svuotati.')}
-btnStart.onclick=async()=>{try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});cam.srcObject=stream;await cam.play();btnShot.disabled=false;btnFinish.disabled=false;btnStart.disabled=true;}catch(e){setStatus('Permesso camera negato: '+e.message)}}
-btnShot.onclick=async()=>{try{const track=cam.srcObject.getVideoTracks()[0];const cap=new ImageCapture(track);const bmp=await cap.grabFrame();const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.9));shots.push(blob);const img=document.createElement('img');img.src=URL.createObjectURL(blob);thumbs.appendChild(img);setStatus(`Foto scattate: ${shots.length}`);updateKPI();}catch(e){setStatus('Errore scatto: '+e.message)}}
+btnStart.onclick=async()=>{
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    cam.srcObject=stream;await cam.play();
+    btnShot.disabled=false;btnFinish.disabled=false;btnStart.disabled=true;
+  }catch(e){setStatus('Permesso camera negato: '+e.message)}
+}
+btnShot.onclick=async()=>{
+  try{
+    const track=cam.srcObject.getVideoTracks()[0];
+    const cap=new ImageCapture(track);
+    const bmp=await cap.grabFrame();
+    const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
+    const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.9));
+    shots.push(blob);
+    const img=document.createElement('img');img.src=URL.createObjectURL(blob);thumbs.appendChild(img);
+    setStatus(`Foto scattate: ${shots.length}`);updateKPI();
+  }catch(e){setStatus('Errore scatto: '+e.message)}
+}
 btnPick.onclick=()=>filepick.click()
-filepick.onchange=()=>{galleryFiles=Array.from(filepick.files||[]);thumbs.innerHTML='';for(const f of galleryFiles){if(f.type.startsWith('image/')){const img=document.createElement('img');img.src=URL.createObjectURL(f);thumbs.appendChild(img)}else{const box=document.createElement('div');box.className='muted';box.textContent='Video: '+f.name;thumbs.appendChild(box)}}setStatus(`${galleryFiles.length} file selezionati da galleria.`);updateKPI()}
+filepick.onchange=()=>{
+  galleryFiles=Array.from(filepick.files||[]);
+  thumbs.innerHTML='';
+  for(const f of galleryFiles){
+    if(f.type.startsWith('image/')){
+      const img=document.createElement('img');img.src=URL.createObjectURL(f);thumbs.appendChild(img);
+    }else{
+      const box=document.createElement('div');box.className='muted';box.textContent='Video: '+f.name;thumbs.appendChild(box);
+    }
+  }
+  setStatus(`${galleryFiles.length} file selezionati da galleria.`);updateKPI();
+}
 
 document.getElementById('finish').onclick=async()=>{
   if(!configured()){alert('Config mancante. Apri ⚙️ Impostazioni.');return}
-  const id=(Date.now().toString(36)+Math.random().toString(36).slice(2,7)).toLowerCase();const base=`uploads/${id}`;const title=(titleEl.value||'Piatto').trim();setStatus('Creo cartelle su GitHub…')
-  await githubRequest(`${base}/README.txt`,'PUT',{message:`create ${base}`,branch:cfg.branch,content:btoa('upload in progress')})
-  let idx=0;for(const blob of shots){const buf=await blob.arrayBuffer();const name=`img_${String(idx++).padStart(4,'0')}.jpg`;await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch:cfg.branch,content:b64(buf)})}
-  let vIdx=1;for(const f of galleryFiles){const buf=await f.arrayBuffer();if(f.type.startswith('image/')){const name=`g_${String(idx++).padStart(4,'0')}.jpg`;await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch:cfg.branch,content:b64(buf)})}else{const ext=(f.name.split('.').pop()||'mp4').toLowerCase();const name=`videos/clip_${String(vIdx++).padStart(2,'0')}.${ext}`;await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch:cfg.branch,content:b64(buf)})}}
-  let index=[],sha=null;try{const r=await fetch(`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/data/index.json?${Date.now()}`);if(r.ok)index=await r.json()}catch{}
-  sha=await getFileSha('data/index.json');index.push({id,title,status:'queued',createdAt:Date.now()});
-  await githubRequest('data/index.json','PUT',{message:`index add ${id}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))),sha})
-  setStatus('Caricato! Vai su Elenco per seguire lo stato.');shots=[];galleryFiles=[];thumbs.innerHTML='';updateKPI();document.querySelector('.tab[data-tab="list"]').click()
+  const id=(Date.now().toString(36)+Math.random().toString(36).slice(2,7)).toLowerCase();
+  const base=`uploads/${id}`;
+  const title=(titleEl.value||'Piatto').trim();
+  setStatus('Creo cartelle su GitHub…');
+
+  await githubRequest(`${base}/README.txt`,'PUT',{message:`create ${base}`,branch:cfg.branch,content:btoa('upload in progress')});
+
+  let idx=0;
+  for(const blob of shots){
+    const buf=await blob.arrayBuffer();
+    const name=`img_${String(idx++).padStart(4,'0')}.jpg`;
+    await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch:cfg.branch,content:b64(buf)});
+  }
+  let vIdx=1;
+  for(const f of galleryFiles){
+    const buf=await f.arrayBuffer();
+    if(f.type.startsWith('image/')){
+      const name=`g_${String(idx++).padStart(4,'0')}.jpg`;
+      await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch:cfg.branch,content:b64(buf)});
+    }else{
+      const ext=(f.name.split('.').pop()||'mp4').toLowerCase();
+      const name=`videos/clip_${String(vIdx++).padStart(2,'0')}.${ext}`;
+      await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch:cfg.branch,content:b64(buf)});
+    }
+  }
+
+  // Aggiorna indice
+  let index=[],sha=null;
+  try{
+    const r=await fetch(`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/data/index.json?${Date.now()}`);
+    if(r.ok) index=await r.json();
+  }catch{}
+  sha=await getFileSha('data/index.json');
+  index.push({id,title,status:'queued',createdAt:Date.now()});
+  await githubRequest('data/index.json','PUT',{message:`index add ${id}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))),sha});
+
+  setStatus('Caricato! Vai su Elenco per seguire lo stato.');
+  shots=[];galleryFiles=[];thumbs.innerHTML='';updateKPI();
+  document.querySelector('.tab[data-tab="list"]').click();
 }
 
 // ====== LIST ======
-function progressBar(p,l){return `<div style="margin-top:8px"><div style="height:10px;background:#222;border-radius:8px"><div style="height:10px;width:${p|0}%;background:#2d6cdf"></div></div><div class="muted" style="margin-top:4px">${l} • ${p|0}%</div></div>`}
-async function deletePath(path){const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}`;const headers={'Authorization':`token ${cfg.token}`};const r=await fetch(url,{headers});if(r.status===404)return;const items=await r.json();const arr=Array.isArray(items)?items:[items];for(const it of arr){await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${it.path}`,{method:'DELETE',headers,body:JSON.stringify({message:`delete ${it.path}`,sha:it.sha,branch:cfg.branch})});}}
-async function touchFile(path,content){const sha=await getFileSha(path);await githubRequest(path,'PUT',{message:`touch ${path}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(content||String(Date.now())))),sha})}
+function progressBar(p,l){
+  return `<div style="margin-top:8px">
+    <div style="height:10px;background:#222;border-radius:8px;overflow:hidden">
+      <div style="height:10px;width:${p|0}%;background:#2d6cdf"></div>
+    </div>
+    <div class="muted" style="margin-top:4px">${l} • ${p|0}%</div>
+  </div>`;
+}
+function phasePill(phase){
+  const bg = phase==='ready' ? '#16381f' :
+             phase==='blocked' ? '#3a1818' :
+             phase==='error' ? '#3a1717' :
+             phase==='mvs' ? '#153024' :
+             phase==='convert' ? '#332418' : '#182338';
+  return `<span class="pill" style="background:${bg}">${phase}</span>`;
+}
+async function deletePath(path){
+  const url=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}`;
+  const headers={'Authorization':`token ${cfg.token}`};
+  const r=await fetch(url,{headers});
+  if(r.status===404) return;
+  const items=await r.json();
+  const arr=Array.isArray(items)?items:[items];
+  for(const it of arr){
+    await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${it.path}`,{
+      method:'DELETE',headers,body:JSON.stringify({message:`delete ${it.path}`,sha:it.sha,branch:cfg.branch})
+    });
+  }
+}
+async function touchFile(path,content){
+  const sha=await getFileSha(path);
+  await githubRequest(path,'PUT',{message:`touch ${path}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(content||String(Date.now())))),sha});
+}
 async function buildCard(it){
   const glb=`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/model.glb`;
   const draco=`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/model.draco.glb`;
   const ktx2=`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/model.ktx2.glb`;
   const usdz=`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/model.usdz`;
   const exists=await fetch(glb,{method:'HEAD'}).then(r=>r.ok).catch(()=>false);
+
   let s={phase:exists?'ready':(it.status||'processing'),percent:exists?100:0,msg:exists?'Pronto':'In lavorazione'};
-  try{const sj=await fetch(`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/status.json?${Date.now()}`).then(r=>r.ok?r.json():null);if(sj)s=sj;}catch{}
+  try{
+    const sj=await fetch(`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/status.json?${Date.now()}`).then(r=>r.ok?r.json():null);
+    if(sj) s=sj;
+  }catch{}
+
   const card=document.createElement('div');card.className='card';
   card.innerHTML=`<div class="row">
     <div class="left">
-      <h3 style="margin:0">${it.title||it.id}</h3>
+      <h3 style="margin:0">${it.title||it.id} ${phasePill(s.phase)}</h3>
       <div>Stato: <code>${s.phase}</code></div>
       <div>ID: <code>${it.id}</code></div>
       <div class="muted">${new Date(it.createdAt).toLocaleString()}</div>
@@ -207,27 +326,55 @@ async function buildCard(it){
       ${exists?`<model-viewer src="${glb}" ios-src="${usdz}" camera-controls shadow-intensity="0.7" environment-image="neutral" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>`:`<div class="muted">In lavorazione…</div>`}
     </div>
   </div>`;
+
   card.querySelectorAll('button[data-act]').forEach(b=>{
     b.onclick=async()=>{
       const act=b.dataset.act,id=b.dataset.id;
-      if(act==='copy'){await navigator.clipboard.writeText(viewURL(id));b.textContent='✅ Copiato';setTimeout(()=>b.textContent='🔗 Copia link',1200);}
+      if(act==='copy'){
+        await navigator.clipboard.writeText(viewURL(id));
+        b.textContent='✅ Copiato';setTimeout(()=>b.textContent='🔗 Copia link',1200);
+      }
       if(act==='refresh'){loadList();}
-      if(act==='rerun'){await touchFile(`uploads/${id}/RERUN.txt`,String(Date.now()));alert('Ricostruzione rilanciata. Attendi l’avvio del workflow.');}
-      if(act==='delraw'){if(confirm('Eliminare SOLO i file di upload grezzi?')){await deletePath(`uploads/${id}`);alert('Upload eliminati.')}}
-      if(act==='delete'){if(confirm('Eliminare TUTTO (modello + upload + indice)?')){await deletePath(`items/${id}`);await deletePath(`uploads/${id}`);const idxUrl=`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/data/index.json?${Date.now()}`;let index=await fetch(idxUrl).then(r=>r.ok?r.json():[]);index=index.filter(x=>x.id!==id);const sha=await getFileSha('data/index.json');await githubRequest('data/index.json','PUT',{message:`remove ${id}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))),sha});alert('Elemento eliminato.');loadList();}}
+      if(act==='rerun'){
+        await touchFile(`uploads/${id}/RERUN.txt`,String(Date.now()));
+        alert('Ricostruzione rilanciata. Attendi l’avvio del workflow.');
+      }
+      if(act==='delraw'){
+        if(confirm('Eliminare SOLO i file di upload grezzi?')){
+          await deletePath(`uploads/${id}`);
+          alert('Upload eliminati.');
+        }
+      }
+      if(act==='delete'){
+        if(confirm('Eliminare TUTTO (modello + upload + indice)?')){
+          await deletePath(`items/${id}`);await deletePath(`uploads/${id}`);
+          const idxUrl=`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/data/index.json?${Date.now()}`;
+          let index=await fetch(idxUrl).then(r=>r.ok?r.json():[]);
+          index=index.filter(x=>x.id!==id);
+          const sha=await getFileSha('data/index.json');
+          await githubRequest('data/index.json','PUT',{message:`remove ${id}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))),sha});
+          alert('Elemento eliminato.');loadList();
+        }
+      }
     };
   });
   return card;
 }
 async function loadList(){
-  if(!cfg.owner||!cfg.repo){document.getElementById('list').innerHTML='<div class="card">Configura il repo in ⚙️ Impostazioni.</div>';return}
+  if(!cfg.owner||!cfg.repo){
+    document.getElementById('list').innerHTML='<div class="card">Configura il repo in ⚙️ Impostazioni.</div>';
+    return;
+  }
   const idxUrl=`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/data/index.json?${Date.now()}`;
   const index=await fetch(idxUrl).then(r=>r.ok?r.json():[]);
   index.sort((a,b)=>b.createdAt-a.createdAt);
   k_items.textContent=index.filter(x=>x.status==='ready').length;
   k_inprogress.textContent=index.filter(x=>x.status!=='ready').length;
   const list=document.getElementById('list');list.innerHTML='';
-  for(const it of index){const card=await buildCard(it);list.appendChild(card);}
+  for(const it of index){
+    const card=await buildCard(it);
+    list.appendChild(card);
+  }
 }
 loadList();setInterval(loadList,10000);
 </script>
