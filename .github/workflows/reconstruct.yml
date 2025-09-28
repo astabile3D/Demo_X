@@ -68,12 +68,12 @@ jobs:
 
           mkdir -p "work/$ID/images" "work/$ID/tmpconv"
 
-          # Prendi TUTTE le immagini (jpg/jpeg/png) in uploads/<ID> ricorsivamente
+          # Prendi TUTTE le immagini (jpg/jpeg/png) ricorsivamente
           while IFS= read -r -d '' f; do
             cp "$f" "work/$ID/tmpconv/"
           done < <(find "uploads/$ID" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) -print0)
 
-          # Se ci sono PNG, convertiamoli a JPG e normalizziamo lato max=4096
+          # Conversione/normalizzazione a JPG max lato 4096
           python - <<'PY'
           import os
           from PIL import Image
@@ -81,14 +81,12 @@ jobs:
           base = f"work/{id}/tmpconv"
           out  = f"work/{id}/images"
           os.makedirs(out, exist_ok=True)
-
           def clamp(im, max_side=4096):
             w,h = im.size
             m = max(w,h)
             if m <= max_side: return im
             s = max_side/m
             return im.resize((int(w*s), int(h*s)), Image.LANCZOS)
-
           i=0
           for fn in sorted(os.listdir(base)):
             src=os.path.join(base,fn)
@@ -124,7 +122,7 @@ jobs:
             PROCEED=yes
           fi
 
-          # Scrivi status.json (UX, non falliamo mai la run)
+          # Aggiorna status.json (mai fallire la run)
           python - <<'PY'
           import json, os
           id  = os.environ["ID"]
@@ -135,13 +133,11 @@ jobs:
           open(p,"w").write(json.dumps({"phase":phase,"percent":pct,"msg":msg}))
           PY
 
-          # Commit/push status
           git add "items/$ID/status.json"
           git pull --rebase || true
           git commit -m "[skip ci] status $ID $PERCENT%" || true
           git push || (git pull --rebase && git push) || true
 
-          # Esponi output per decidere se proseguire
           echo "proceed=$PROCEED" >> "$GITHUB_OUTPUT"
           echo "count=${COUNT:-0}" >> "$GITHUB_OUTPUT"
 
@@ -194,7 +190,6 @@ jobs:
           export ID
           mkdir -p "items/$ID"
 
-          # Converti se esiste il modello ODM
           if [ -f "work/$ID/code/odm_texturing/odm_textured_model.obj" ]; then
             python scripts/prepare_glb.py "work/$ID/code/odm_texturing/odm_textured_model.obj" "items/$ID/model.glb" || true
             cp items_template/index.html "items/$ID/index.html" || true
@@ -211,7 +206,6 @@ jobs:
             git commit -m "[skip ci] status $ID 85% + files" || true
             git push || (git pull --rebase && git push) || true
           else
-            # ODM non ha prodotto OBJ → segna come errore non bloccante della run
             python - <<'PY'
             import json, os
             id = os.environ["ID"]
