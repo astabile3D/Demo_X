@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard – Piatti 3D</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+<style>
+  :root{--bg:#0e0e0e;--card:#151515;--b:#2a2a2a;--txt:#eee;--accent:#2d6cdf;--warn:#e67e22;--danger:#e74c3c}
+  *{box-sizing:border-box}
+  body{font:14px Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;background:var(--bg);color:var(--txt)}
+  header{padding:12px 16px;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  header b{font-size:16px}
+  main{padding:16px;max-width:1200px;margin:0 auto}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{padding:10px 14px;border:1px solid var(--b);border-radius:10px;background:#141414;cursor:pointer}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .panel{display:none}
+  .panel.active{display:block}
+  .card{border:1px solid var(--b);border-radius:12px;padding:12px;margin:12px 0;background:var(--card)}
+  .row{display:flex;gap:16px;flex-wrap:wrap}
+  .left{flex:1 1 300px}
+  .right{flex:2 1 520px}
+  model-viewer{width:100%;height:420px;background:#000;border-radius:12px}
+  code{background:#1d1d1d;padding:2px 6px;border-radius:6px}
+  input,button{font:14px Inter,system-ui}
+  input,select{padding:10px;border-radius:10px;border:1px solid var(--b);background:#161616;color:var(--txt);width:100%}
+  button{padding:10px 14px;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+  button.secondary{background:#262626}
+  button.warn{background:var(--warn)}
+  button.danger{background:var(--danger)}
+  .thumbs img{width:70px;height:70px;object-fit:cover;margin:4px;border-radius:8px;border:1px solid var(--b)}
+  video{width:100%;max-width:520px;border-radius:12px;background:#000}
+  .muted{opacity:.85}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap}
+  .kpis .k{flex:1 1 180px;border:1px solid var(--b);border-radius:12px;background:#141414;padding:10px}
+  .k .v{font-weight:700;font-size:18px}
+  .sep{height:1px;background:#222;margin:12px 0}
+  dialog{border:1px solid var(--b);border-radius:12px;background:#111;color:#eee;padding:16px;max-width:520px}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  label{display:block;margin:8px 0 4px}
+</style>
+</head>
+<body>
+<header>
+  <b>Dashboard – Piatti 3D</b>
+  <div class="toolbar">
+    <span class="muted">Repo: <code id="repoLabel">non configurato</code></span>
+    <button id="btnSettings" class="secondary">⚙️ Impostazioni</button>
+    <button id="refreshList" class="secondary" title="Ricarica elenco">↻ Aggiorna</button>
+  </div>
+</header>
+
+<main id="main">
+  <div class="tabs">
+    <div class="tab active" data-tab="capture">Cattura</div>
+    <div class="tab" data-tab="list">Elenco</div>
+    <div class="tab" data-tab="help">Help</div>
+  </div>
+
+  <!-- Panel: Cattura -->
+  <section id="panel-capture" class="panel active">
+    <div class="kpis">
+      <div class="k"><div class="v" id="k_items">–</div><div class="muted">Piatti pubblicati</div></div>
+      <div class="k"><div class="v" id="k_inprogress">–</div><div class="muted">In lavorazione</div></div>
+      <div class="k"><div class="v" id="k_uploads">–</div><div class="muted">Scatti locali</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 8px">Nuova cattura</h3>
+      <div class="row">
+        <div class="left">
+          <label>Nome piatto</label>
+          <input id="title" placeholder="Es. Pasta alla Norma">
+          <div class="muted" style="margin-top:8px">Suggerito: 40–80 foto attorno al piatto con luce diffusa.</div>
+          <div class="sep"></div>
+          <div class="toolbar">
+            <button id="start">📷 Apri Fotocamera</button>
+            <button id="shot" class="secondary" disabled>➕ Scatta</button>
+            <button id="finish" disabled>⬆️ Carica</button>
+            <input id="filepick" type="file" accept="image/*,video/*" multiple style="display:none">
+            <button id="pick" class="secondary">📂 Aggiungi da galleria</button>
+            <button id="clearShots" class="secondary">🗑️ Svuota scatti</button>
+          </div>
+          <div id="status" class="muted" style="margin-top:8px"></div>
+        </div>
+        <div class="right">
+          <video id="cam" playsinline muted></video>
+          <div id="thumbs" class="thumbs"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Panel: Elenco -->
+  <section id="panel-list" class="panel">
+    <div id="list"></div>
+  </section>
+
+  <!-- Panel: Help -->
+  <section id="panel-help" class="panel">
+    <div class="card">
+      <h3 style="margin:0 0 8px">Istruzioni</h3>
+      <ul>
+        <li>Apri la dashboard, clicca <b>⚙️ Impostazioni</b> e inserisci repo/token.</li>
+        <li>Tab <b>Cattura</b>: scatta foto o seleziona file dalla galleria, poi <b>Carica</b>.</li>
+        <li>Tab <b>Elenco</b>: vedi avanzamento, apri la pagina pubblica o elimina elementi.</li>
+      </ul>
+      <p class="muted">Nota: l’elaborazione su GitHub Actions (CPU) può richiedere tempo.</p>
+    </div>
+  </section>
+</main>
+
+<!-- Dialog Impostazioni -->
+<dialog id="dlg">
+  <form method="dialog">
+    <h3>Impostazioni</h3>
+    <label>Repo Owner <input id="cfgOwner" placeholder="es. astabile3D"></label>
+    <label>Repo Name <input id="cfgRepo" placeholder="es. Demo_X"></label>
+    <label>Branch <input id="cfgBranch" value="main"></label>
+    <label>Token <input id="cfgToken" type="password" placeholder="ghp_..."></label>
+    <div class="toolbar" style="margin-top:12px">
+      <button id="saveCfg">💾 Salva</button>
+      <button id="closeCfg" class="secondary">Chiudi</button>
+      <button id="clearCfg" class="warn">Reset</button>
+    </div>
+    <p class="muted" style="margin-top:8px">Le impostazioni restano nel tuo browser (localStorage).</p>
+  </form>
+</dialog>
+
+<script type="module">
+// ====== CONFIG (localStorage) ======
+const dlg = document.getElementById('dlg');
+const repoLabel = document.getElementById('repoLabel');
+
+function getCfg(){
+  return {
+    owner: localStorage.getItem('repoOwner')||'',
+    repo: localStorage.getItem('repoName')||'',
+    branch: localStorage.getItem('repoBranch')||'main',
+    token: localStorage.getItem('repoToken')||''
+  };
+}
+function setCfg(c){
+  localStorage.setItem('repoOwner', c.owner||'');
+  localStorage.setItem('repoName', c.repo||'');
+  localStorage.setItem('repoBranch', c.branch||'main');
+  if (c.token!==undefined) localStorage.setItem('repoToken', c.token||'');
+  updateRepoLabel();
+}
+function updateRepoLabel(){
+  const c = getCfg();
+  repoLabel.textContent = c.owner && c.repo ? (c.owner + "/" + c.repo) : "non configurato";
+}
+
+document.getElementById('btnSettings').onclick = ()=>{
+  const c = getCfg();
+  document.getElementById('cfgOwner').value = c.owner;
+  document.getElementById('cfgRepo').value = c.repo;
+  document.getElementById('cfgBranch').value = c.branch;
+  document.getElementById('cfgToken').value = c.token;
+  dlg.showModal();
+};
+document.getElementById('saveCfg').onclick = (e)=>{
+  e.preventDefault();
+  setCfg({
+    owner: document.getElementById('cfgOwner').value.trim(),
+    repo: document.getElementById('cfgRepo').value.trim(),
+    branch: document.getElementById('cfgBranch').value.trim()||'main',
+    token: document.getElementById('cfgToken').value
+  });
+  dlg.close();
+  alert('Impostazioni salvate.');
+};
+document.getElementById('closeCfg').onclick = (e)=>{ e.preventDefault(); dlg.close(); };
+document.getElementById('clearCfg').onclick = (e)=>{
+  e.preventDefault();
+  if(confirm('Reset impostazioni?')){
+    localStorage.removeItem('repoOwner');
+    localStorage.removeItem('repoName');
+    localStorage.removeItem('repoBranch');
+    localStorage.removeItem('repoToken');
+    updateRepoLabel();
+    dlg.close();
+  }
+};
+
+updateRepoLabel();
+
+// ====== Helpers GitHub API ======
+function b64(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+async function githubRequest(path, method, body){
+  const c = getCfg();
+  if(!c.owner || !c.repo || !c.token) throw new Error("Config mancante. Apri ⚙️ Impostazioni.");
+  const r = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}`,{
+    method, headers:{ 'Authorization': `token ${c.token}`, 'Content-Type':'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function getFileSha(path){
+  const c = getCfg();
+  const r = await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}?ref=${c.branch}`,{
+    headers: c.token ? { 'Authorization': `token ${c.token}` } : {}
+  });
+  if(r.status===404) return null;
+  const j = await r.json(); return j.sha;
+}
+async function fetchJSON(url){ const r=await fetch(url); if(!r.ok) return null; return r.json(); }
+function viewURL(id){
+  const c = getCfg();
+  return `https://${c.owner}.github.io/${c.repo}/items/${id}/index.html`;
+}
+function statusURL(id){
+  const c = getCfg();
+  return `https://${c.owner}.github.io/${c.repo}/items/${id}/status.json?${Date.now()}`;
+}
+function qrURL(id){ return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(viewURL(id))}`; }
+
+// ====== TABS ======
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+    if (t.dataset.tab==='list') loadList();
+  };
+});
+document.getElementById('refreshList').onclick=()=>loadList();
+
+// ====== CAPTURE ======
+const k_items = document.getElementById('k_items');
+const k_inprogress = document.getElementById('k_inprogress');
+const k_uploads = document.getElementById('k_uploads');
+const cam = document.getElementById('cam');
+const btnStart = document.getElementById('start');
+const btnShot = document.getElementById('shot');
+const btnFinish = document.getElementById('finish');
+const btnPick = document.getElementById('pick');
+const filepick = document.getElementById('filepick');
+const btnClear = document.getElementById('clearShots');
+const thumbs = document.getElementById('thumbs');
+const statusEl = document.getElementById('status');
+const titleEl = document.getElementById('title');
+let stream=null, shots=[], galleryFiles=[];
+
+function setStatus(t){ statusEl.textContent=t; }
+function updateUploadsKPI(){ k_uploads.textContent = shots.length + galleryFiles.length; }
+btnClear.onclick=()=>{ shots=[]; galleryFiles=[]; thumbs.innerHTML=''; updateUploadsKPI(); setStatus("Scatti svuotati."); };
+
+btnStart.onclick = async () => {
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    cam.srcObject = stream; await cam.play();
+    btnShot.disabled = false; btnFinish.disabled = false; btnStart.disabled = true;
+  }catch(e){ setStatus("Permesso camera negato: " + e.message); }
+};
+
+btnShot.onclick = async () => {
+  try{
+    const track = cam.srcObject.getVideoTracks()[0];
+    const cap = new ImageCapture(track);
+    const bmp = await cap.grabFrame();
+    const c = document.createElement('canvas'); c.width=bmp.width; c.height=bmp.height;
+    const ctx = c.getContext('2d'); ctx.drawImage(bmp,0,0);
+    const maxW = 2048;
+    if (c.width>maxW){
+      const r=maxW/c.width; const c2=document.createElement('canvas'); c2.width=maxW; c2.height=c.height*r;
+      c2.getContext('2d').drawImage(c,0,0,c2.width,c2.height);
+      c.width=c2.width; c.height=c2.height; ctx.drawImage(c2,0,0);
+    }
+    const blob = await new Promise(res=>c.toBlob(res,'image/jpeg',0.9));
+    shots.push(blob);
+    const img = document.createElement('img'); img.src=URL.createObjectURL(blob); thumbs.appendChild(img);
+    setStatus(`Foto scattate: ${shots.length}`);
+    updateUploadsKPI();
+  }catch(e){
+    setStatus("Errore scatto: " + e.message);
+  }
+};
+
+btnPick.onclick = ()=> filepick.click();
+filepick.onchange = ()=>{
+  galleryFiles = Array.from(filepick.files || []);
+  thumbs.innerHTML='';
+  for(const f of galleryFiles){
+    if(f.type.startsWith('image/')){
+      const img = document.createElement('img'); img.src=URL.createObjectURL(f); thumbs.appendChild(img);
+    } else {
+      const box = document.createElement('div'); box.className='muted'; box.textContent = `Video: ${f.name}`; thumbs.appendChild(box);
+    }
+  }
+  setStatus(`${galleryFiles.length} file selezionati da galleria.`);
+  updateUploadsKPI();
+};
+
+async function uploadContent(){
+  const c = getCfg();
+  if(!c.owner || !c.repo || !c.token){ alert("Config mancante. Apri ⚙️ Impostazioni."); return; }
+  const id = (Date.now().toString(36)+Math.random().toString(36).slice(2,7)).toLowerCase();
+  const base = `uploads/${id}`;
+  const title = (titleEl.value||"Piatto").trim();
+  setStatus("Preparazione cartelle su GitHub…");
+
+  await githubRequest(`${base}/README.txt`, 'PUT', {
+    message: `create ${base}`, branch: c.branch, content: btoa("upload in progress")
+  });
+
+  // Carica IMMAGINI da scatti live
+  let idx=0;
+  for (const blob of shots){
+    const buf = await blob.arrayBuffer();
+    const name = `img_${String(idx++).padStart(4,'0')}.jpg";
+    await githubRequest(`${base}/${name}`, 'PUT', {
+      message: `upload ${name}`, branch: c.branch, content: b64(buf)
+    });
+  }
+
+  // Carica FILE dalla galleria (immagini o video)
+  let vIdx = 1;
+  for (const f of galleryFiles){
+    const buf = await f.arrayBuffer();
+    if (f.type.startsWith('image/')){
+      const name = `g_${String(idx++).padStart(4,'0')}.jpg`;
+      await githubRequest(`${base}/${name}`, 'PUT', {
+        message: `upload ${name}`, branch: c.branch, content: b64(buf)
+      });
+    } else {
+      const ext = (f.name.split('.').pop()||'mp4').toLowerCase();
+      const name = `videos/clip_${String(vIdx++).padStart(2,'0')}.${ext}`;
+      await githubRequest(`${base}/${name}`, 'PUT', {
+        message: `upload ${name}`, branch: c.branch, content: b64(buf)
+      });
+    }
+  }
+
+  // Aggiorna index.json
+  let index=[], sha=null;
+  try{
+    const r = await fetch(`https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch}/data/index.json?${Date.now()}`);
+    if (r.ok) index = await r.json();
+  }catch{}
+  sha = await getFileSha('data/index.json');
+  index.push({ id, title, status:'queued', createdAt: Date.now() });
+  await githubRequest('data/index.json', 'PUT', {
+    message: `index add ${id}`, branch: c.branch,
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))), sha
+  });
+
+  setStatus("Caricato! Vai in Elenco per seguire lo stato.");
+  shots=[]; galleryFiles=[]; thumbs.innerHTML=''; updateUploadsKPI();
+  document.querySelector('.tab[data-tab="list"]').click();
+}
+document.getElementById('finish').onclick = uploadContent;
+
+// ====== LIST / MANAGEMENT ======
+function progressBarHTML(p,l){ return `<div style="margin-top:8px"><div style="height:10px;background:#222;border-radius:8px"><div style="height:10px;width:${p|0}%;background:#2d6cdf"></div></div><div class="muted" style="margin-top:4px">${l} • ${p|0}%</div></div>`; }
+
+async function deletePath(path){
+  const c = getCfg();
+  const url = `https://api.github.com/repos/${c.owner}/${c.repo}/contents/${path}?ref=${c.branch}`;
+  const headers = { 'Authorization': `token ${c.token}` };
+  const r = await fetch(url, { headers });
+  if(r.status===404) return;
+  const items = await r.json();
+  const arr = Array.isArray(items) ? items : [items];
+  for(const it of arr){
+    await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}/contents/${it.path}`,{
+      method:'DELETE', headers,
+      body: JSON.stringify({ message:`delete ${it.path}`, sha: it.sha, branch: c.branch })
+    });
+  }
+}
+
+async function buildCard(it){
+  const c = getCfg();
+  const glbURL = `https://${c.owner}.github.io/${c.repo}/items/${it.id}/model.glb`;
+  const exists = await fetch(glbURL,{method:'HEAD'}).then(r=>r.ok).catch(()=>false);
+
+  let s = { phase: exists?'ready':(it.status||'processing'), percent: exists?100:0, msg: exists?'Pronto':'In lavorazione' };
+  try{
+    const sj = await fetchJSON(statusURL(it.id)); if(sj) s = sj;
+  }catch{}
+
+  const card = document.createElement('div'); card.className='card';
+  card.innerHTML = `
+    <div class="row">
+      <div class="left">
+        <h3 style="margin:0">${it.title || it.id}</h3>
+        <div>Stato: <code>${s.phase}</code></div>
+        <div>ID: <code>${it.id}</code></div>
+        <div class="muted">${new Date(it.createdAt).toLocaleString()}</div>
+        ${progressBarHTML(s.percent||0, s.msg||s.phase)}
+        <div style="margin-top:8px"><img src="${qrURL(it.id)}" alt="QR"></div>
+        <div style="margin-top:8px"><a href="${viewURL(it.id)}" target="_blank">Apri pagina pubblica ▶</a></div>
+        <div class="toolbar" style="margin-top:8px">
+          <button class="secondary" data-act="copy" data-id="${it.id}">🔗 Copia link</button>
+          <button class="secondary" data-act="refresh" data-id="${it.id}">↻ Aggiorna</button>
+          <button class="warn" data-act="delraw" data-id="${it.id}">🗑️ Elimina upload</button>
+          <button class="danger" data-act="delete" data-id="${it.id}">❌ Elimina elemento</button>
+        </div>
+      </div>
+      <div class="right">
+        ${exists ? `<model-viewer src="${glbURL}" camera-controls shadow-intensity="0.7" environment-image="neutral" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>`
+                 : `<div class="muted">In lavorazione…</div>`}
+      </div>
+    </div>`;
+
+  card.querySelectorAll('button[data-act]').forEach(b=>{
+    b.onclick = async ()=>{
+      const act=b.dataset.act, id=b.dataset.id;
+      if(act==='copy'){ await navigator.clipboard.writeText(viewURL(id)); b.textContent="✅ Copiato"; setTimeout(()=>b.textContent="🔗 Copia link",1200); }
+      if(act==='refresh'){ loadList(); }
+      if(act==='delraw'){
+        if(confirm("Eliminare SOLO i file di upload grezzi per questo elemento?")){ await deletePath(`uploads/${id}`); alert("Upload eliminati."); }
+      }
+      if(act==='delete'){
+        if(confirm("Eliminare TUTTO (modello, upload, indice) per questo elemento?")){
+          await deletePath(`items/${id}`);
+          await deletePath(`uploads/${id}`);
+          // remove from index
+          const c=getCfg();
+          const idxUrl=`https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch}/data/index.json?${Date.now()}`;
+          let index=await fetchJSON(idxUrl)||[];
+          index=index.filter(x=>x.id!==id);
+          const sha=await getFileSha('data/index.json');
+          await githubRequest('data/index.json','PUT',{
+            message:`remove ${id}`, branch:c.branch,
+            content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))), sha
+          });
+          alert("Elemento eliminato."); loadList();
+        }
+      }
+    };
+  });
+
+  return card;
+}
+
+async function loadList(){
+  const c = getCfg();
+  if(!c.owner||!c.repo){ document.getElementById('list').innerHTML='<div class="card">Configura il repo nelle ⚙️ Impostazioni.</div>'; return; }
+  const idxUrl = `https://raw.githubusercontent.com/${c.owner}/${c.repo}/${c.branch}/data/index.json?${Date.now()}`;
+  const index = (await fetchJSON(idxUrl))||[];
+  index.sort((a,b)=>b.createdAt-a.createdAt);
+
+  // KPIs
+  k_items.textContent = index.filter(x=>x.status==='ready').length;
+  k_inprogress.textContent = index.filter(x=>x.status!=='ready').length;
+
+  const list = document.getElementById('list'); list.innerHTML='';
+  for (const it of index){
+    const card = await buildCard(it);
+    list.appendChild(card);
+  }
+}
+loadList();
+setInterval(loadList, 10000);
+</script>
+</body>
+</html>
