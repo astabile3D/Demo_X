@@ -4,9 +4,16 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Piatto 3D</title>
 <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
-<style>body{margin:0;background:#000} model-viewer{width:100vw;height:100vh}</style>
+<style>body{margin:0;background:#000;color:#fff;font:14px system-ui} model-viewer{width:100vw;height:90vh}</style>
 </head>
 <body>
-<model-viewer src="model.glb" camera-controls shadow-intensity="0.7" environment-image="neutral" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>
+<model-viewer id="mv" src="model.glb" ios-src="model.usdz" camera-controls shadow-intensity="0.7" environment-image="neutral" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>
+<div style="padding:10px">
+  <b>Scarica varianti:</b>
+  <a href="model.glb">GLB</a> ·
+  <a href="model.draco.glb">GLB Draco</a> ·
+  <a href="model.ktx2.glb">GLB KTX2</a> ·
+  <a href="model.usdz">USDZ</a>
+</div>
 </body>
 </html>
