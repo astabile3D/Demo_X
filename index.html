@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard – Piatti 3D</title>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+<style>
+  :root{--bg:#0e0e0e;--card:#151515;--b:#2a2a2a;--txt:#eee;--accent:#2d6cdf;--warn:#e67e22;--danger:#e74c3c}
+  *{box-sizing:border-box}
+  body{font:14px Inter,system-ui;margin:0;background:var(--bg);color:var(--txt)}
+  header{padding:12px 16px;border-bottom:1px solid var(--b);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  main{padding:16px;max-width:1200px;margin:0 auto}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{padding:10px 14px;border:1px solid var(--b);border-radius:10px;background:#141414;cursor:pointer}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .panel{display:none}.panel.active{display:block}
+  .card{border:1px solid var(--b);border-radius:12px;padding:12px;margin:12px 0;background:var(--card)}
+  .row{display:flex;gap:16px;flex-wrap:wrap}
+  .left{flex:1 1 300px}.right{flex:2 1 520px}
+  model-viewer{width:100%;height:420px;background:#000;border-radius:12px}
+  button{padding:10px 14px;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+  button.secondary{background:#262626}button.warn{background:var(--warn)}button.danger{background:var(--danger)}
+  input{padding:10px;border-radius:10px;border:1px solid var(--b);background:#161616;color:#fff;width:100%}
+  .thumbs img{width:70px;height:70px;object-fit:cover;margin:4px;border-radius:8px;border:1px solid var(--b)}
+  video{width:100%;max-width:520px;border-radius:12px;background:#000}
+  .muted{opacity:.85}
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .kpis{display:flex;gap:12px;flex-wrap:wrap}
+  .k{flex:1 1 180px;border:1px solid var(--b);border-radius:12px;background:#141414;padding:10px}
+  .k .v{font-weight:700;font-size:18px}
+  dialog{border:1px solid var(--b);border-radius:12px;background:#111;color:#eee;padding:16px;max-width:520px}
+  dialog::backdrop{background:rgba(0,0,0,.6)}
+  label{display:block;margin:8px 0 4px}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:600;margin-left:6px}
+</style>
+</head>
+<body>
+<header>
+  <div><b>Dashboard – Piatti 3D</b><br><span class="muted">Repo: <code id="repoLabel">non configurato</code></span></div>
+  <div class="toolbar">
+    <button id="btnSettings" class="secondary">⚙️ Impostazioni</button>
+    <button id="refreshList" class="secondary">↻ Aggiorna</button>
+    <button id="btnSignOut" class="secondary">⛔ Esci</button>
+  </div>
+</header>
+<main>
+  <div class="tabs">
+    <div class="tab active" data-tab="capture">Cattura</div>
+    <div class="tab" data-tab="list">Elenco</div>
+    <div class="tab" data-tab="help">Help</div>
+  </div>
+
+  <section id="panel-capture" class="panel active">
+    <div class="kpis">
+      <div class="k"><div class="v" id="k_items">–</div><div class="muted">Piatti pubblicati</div></div>
+      <div class="k"><div class="v" id="k_inprogress">–</div><div class="muted">In lavorazione</div></div>
+      <div class="k"><div class="v" id="k_uploads">–</div><div class="muted">Scatti locali</div></div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 8px">Nuova cattura</h3>
+      <div class="row">
+        <div class="left">
+          <label>Nome piatto</label>
+          <input id="title" placeholder="Es. Pasta alla Norma">
+          <div class="muted" style="margin-top:8px">Suggerito: 40–80 foto attorno al piatto con luce diffusa.</div>
+          <div class="toolbar" style="margin-top:8px">
+            <button id="start">📷 Apri Fotocamera</button>
+            <button id="shot" class="secondary" disabled>➕ Scatta</button>
+            <button id="finish" disabled>⬆️ Invia al motore</button>
+            <input id="filepick" type="file" accept="image/*,video/*" multiple style="display:none">
+            <button id="pick" class="secondary">📂 Aggiungi da galleria</button>
+            <button id="clearShots" class="secondary">🗑️ Svuota</button>
+          </div>
+          <div id="status" class="muted" style="margin-top:8px"></div>
+        </div>
+        <div class="right">
+          <video id="cam" playsinline muted></video>
+          <div id="thumbs" class="thumbs"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-list" class="panel">
+    <div id="list"></div>
+  </section>
+
+  <section id="panel-help" class="panel">
+    <div class="card">
+      <h3 style="margin:0 0 8px">Istruzioni</h3>
+      <ol>
+        <li>⚙️ Configura repo/branch/token (salvati nel tuo browser).</li>
+        <li>🔑 Imposta anche l'URL del tuo **Proxy KIRI** (es. <code>https://api.tuodominio.com</code>).</li>
+        <li>📷 Cattura 40–80 foto oppure carica dalla galleria.</li>
+        <li>⬆️ Invia: il proxy crea il job su KIRI e pubblica i risultati in <code>items/&lt;id&gt;/</code>.</li>
+        <li>⏳ Segui lo stato in Elenco; a fine job trovi link pubblico + QR + varianti.</li>
+      </ol>
+      <p class="muted">Ricorda: &lt;20 foto → job bloccato con suggerimenti; 20–39 → warning; ≥40 consigliato.</p>
+    </div>
+  </section>
+</main>
+
+<!-- Dialog Config -->
+<dialog id="dlg">
+  <form method="dialog">
+    <h3>Impostazioni</h3>
+    <label>Repo Owner <input id="cfgOwner" placeholder="es. astabile3D"></label>
+    <label>Repo Name <input id="cfgRepo" placeholder="es. Demo_X"></label>
+    <label>Branch <input id="cfgBranch" value="main"></label>
+    <label>Token <input id="cfgToken" type="password" placeholder="ghp_..."></label>
+    <label>Proxy KIRI URL <input id="cfgProxy" placeholder="https://api.tuodominio.com"></label>
+    <div class="toolbar" style="margin-top:12px">
+      <button id="saveCfg">💾 Salva</button>
+      <button id="closeCfg" class="secondary">Chiudi</button>
+      <button id="clearCfg" class="warn">Reset</button>
+    </div>
+    <p class="muted" style="margin-top:8px">Le impostazioni restano nel tuo browser (localStorage).</p>
+  </form>
+</dialog>
+
+<script type="module">
+// ====== CONFIG ======
+const dlg=document.getElementById('dlg'), repoLabel=document.getElementById('repoLabel');
+const cfg={
+  get owner(){return localStorage.getItem('repoOwner')||''},
+  get repo(){return localStorage.getItem('repoName')||''},
+  get branch(){return localStorage.getItem('repoBranch')||'main'},
+  get token(){return localStorage.getItem('repoToken')||''},
+  get proxy(){return localStorage.getItem('proxyUrl')||''},
+  set(o){
+    if(o.owner!==undefined)localStorage.setItem('repoOwner',o.owner||'');
+    if(o.repo!==undefined)localStorage.setItem('repoName',o.repo||'');
+    if(o.branch!==undefined)localStorage.setItem('repoBranch',o.branch||'main');
+    if(o.token!==undefined)localStorage.setItem('repoToken',o.token||'');
+    if(o.proxy!==undefined)localStorage.setItem('proxyUrl',o.proxy||'');
+  }
+};
+function configured(){return !!(cfg.owner&&cfg.repo&&cfg.token)}
+function updateRepoLabel(){repoLabel.textContent=cfg.owner&&cfg.repo?`${cfg.owner}/${cfg.repo}`:'non configurato'}
+document.getElementById('btnSettings').onclick=()=>{
+  document.getElementById('cfgOwner').value=cfg.owner;
+  document.getElementById('cfgRepo').value=cfg.repo;
+  document.getElementById('cfgBranch').value=cfg.branch;
+  document.getElementById('cfgToken').value=cfg.token;
+  document.getElementById('cfgProxy').value=cfg.proxy;
+  dlg.showModal()
+}
+document.getElementById('saveCfg').onclick=(e)=>{
+  e.preventDefault();
+  cfg.set({
+    owner:document.getElementById('cfgOwner').value.trim(),
+    repo:document.getElementById('cfgRepo').value.trim(),
+    branch:document.getElementById('cfgBranch').value.trim()||'main',
+    token:document.getElementById('cfgToken').value,
+    proxy:document.getElementById('cfgProxy').value.trim()
+  });
+  updateRepoLabel();dlg.close();alert('Impostazioni salvate.')
+}
+document.getElementById('closeCfg').onclick=(e)=>{e.preventDefault();dlg.close()}
+document.getElementById('clearCfg').onclick=(e)=>{e.preventDefault();if(confirm('Reset impostazioni?')){localStorage.clear();updateRepoLabel();dlg.close()}}
+document.getElementById('btnSignOut').onclick=()=>{if(confirm('Rimuovere configurazione salvata?')){localStorage.clear();updateRepoLabel();alert('Configurazione rimossa.')}}
+updateRepoLabel();
+
+// ====== UTILS ======
+function b64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf)))}
+async function githubRequest(path,method,body){
+  if(!configured())throw new Error('Config mancante.');
+  const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`,{
+    method,
+    headers:{'Authorization':`token ${cfg.token}`,'Content-Type':'application/json'},
+    body:body?JSON.stringify(body):undefined
+  });
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+async function getFileSha(path){
+  const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}?ref=${cfg.branch}`,{
+    headers:configured()?{'Authorization':`token ${cfg.token}`}:{}
+  });
+  if(r.status===404) return null;
+  const j=await r.json();return j.sha;
+}
+function viewURL(id){return `https://${cfg.owner}.github.io/${cfg.repo}/items/${id}/index.html`}
+function statusURL(id){return `https://${cfg.owner}.github.io/${cfg.repo}/items/${id}/status.json?${Date.now()}`}
+function qrURL(id){return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(viewURL(id))}`}
+
+async function touchIndexAdd(id,title){
+  // legge, aggiunge l'item a data/index.json (se esiste), crea il file se assente
+  const idxPath='data/index.json';
+  let index=[]; let sha=await getFileSha(idxPath);
+  try{const r=await fetch(`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/${idxPath}?${Date.now()}`);if(r.ok) index=await r.json();}catch{}
+  if(!index.find(x=>x.id===id)) index.push({id,title,status:'queued',createdAt:Date.now()});
+  await githubRequest(idxPath,'PUT',{message:`index add ${id}`,branch:cfg.branch,content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))),sha});
+}
+
+// ====== TABS ======
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+    if(t.dataset.tab==='list') loadList();
+  };
+});
+document.getElementById('refreshList').onclick=()=>loadList();
+
+// ====== CAPTURE ======
+const k_items=document.getElementById('k_items'),k_inprogress=document.getElementById('k_inprogress'),k_uploads=document.getElementById('k_uploads');
+const cam=document.getElementById('cam'),btnStart=document.getElementById('start'),btnShot=document.getElementById('shot'),btnFinish=document.getElementById('finish'),btnPick=document.getElementById('pick'),filepick=document.getElementById('filepick'),btnClear=document.getElementById('clearShots'),thumbs=document.getElementById('thumbs'),statusEl=document.getElementById('status'),titleEl=document.getElementById('title');
+let stream=null,shots=[],galleryFiles=[];
+function setStatus(t){statusEl.textContent=t}
+function updateKPI(){k_uploads.textContent=shots.length+galleryFiles.length}
+btnClear.onclick=()=>{shots=[];galleryFiles=[];thumbs.innerHTML='';updateKPI();setStatus('Scatti svuotati.')}
+btnStart.onclick=async()=>{
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+    cam.srcObject=stream;await cam.play();
+    btnShot.disabled=false;btnFinish.disabled=false;btnStart.disabled=true;
+  }catch(e){setStatus('Permesso camera negato: '+e.message)}
+}
+btnShot.onclick=async()=>{
+  try{
+    const track=cam.srcObject.getVideoTracks()[0];
+    const cap=new ImageCapture(track);
+    const bmp=await cap.grabFrame();
+    const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;c.getContext('2d').drawImage(bmp,0,0);
+    const blob=await new Promise(res=>c.toBlob(res,'image/jpeg',0.9));
+    shots.push(blob);
+    const img=document.createElement('img');img.src=URL.createObjectURL(blob);thumbs.appendChild(img);
+    setStatus(`Foto scattate: ${shots.length}`);updateKPI();
+  }catch(e){setStatus('Errore scatto: '+e.message)}
+}
+btnPick.onclick=()=>filepick.click()
+filepick.onchange=()=>{
+  galleryFiles=Array.from(filepick.files||[]);
+  thumbs.innerHTML='';
+  for(const f of galleryFiles){
+    if(f.type.startsWith('image/')){
+      const img=document.createElement('img');img.src=URL.createObjectURL(f);thumbs.appendChild(img);
+    }else{
+      const box=document.createElement('div');box.className='muted';box.textContent='Video: '+f.name;thumbs.appendChild(box);
+    }
+  }
+  setStatus(`${galleryFiles.length} file selezionati da galleria.`);updateKPI();
+}
+
+// ====== INVIO AL PROXY KIRI ======
+async function toBase64(blob){
+  const buf = await blob.arrayBuffer();
+  return b64(buf);
+}
+async function submitToProxy(id, title, shots, galleryFiles){
+  if(!cfg.proxy){ alert('Configura il Proxy KIRI in ⚙️ Impostazioni'); throw new Error('Proxy mancante'); }
+  // costruiamo l'elenco immagini (solo immagini: i video sono ignorati in questa prima versione)
+  const images = [];
+  for (let i=0;i<shots.length;i++){
+    images.push({ name:`cam_${String(i).padStart(6,'0')}.jpg`, dataBase64: await toBase64(shots[i]) });
+  }
+  for (let i=0;i<galleryFiles.length;i++){
+    const f = galleryFiles[i];
+    if (f.type.startsWith('image/')){
+      images.push({ name: f.name || `gal_${String(i).padStart(6,'0')}.jpg`, dataBase64: await toBase64(f) });
+    }
+  }
+  const r = await fetch(cfg.proxy.replace(/\/$/,'') + '/jobs', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ id, title, images })
+  });
+  if(!r.ok){ throw new Error('Proxy error: '+(await r.text())) }
+  return r.json();
+}
+
+document.getElementById('finish').onclick=async()=>{
+  try{
+    const id=(Date.now().toString(36)+Math.random().toString(36).slice(2,7)).toLowerCase();
+    const title=(titleEl.value||'Piatto').trim();
+    setStatus('Invio al motore…');
+    // aggiorna indice pubblico subito (voce "queued")
+    if(configured()) await touchIndexAdd(id,title);
+    const result = await submitToProxy(id, title, shots, galleryFiles);
+    if(result.blocked){
+      alert('Poche immagini: caricane almeno 20 e riprova.');
+      return;
+    }
+    setStatus('Job inviato! Vai in Elenco per seguire lo stato.');
+    // reset locali
+    shots=[];galleryFiles=[];thumbs.innerHTML='';updateKPI();
+    // apri pagina pubblica
+    if(configured()) window.open(viewURL(id),'_blank');
+    document.querySelector('.tab[data-tab="list"]').click();
+  }catch(e){
+    setStatus('Errore invio: '+e.message);
+  }
+}
+
+// ====== LIST ======
+function progressBar(p,l){
+  return `<div style="margin-top:8px">
+    <div style="height:10px;background:#222;border-radius:8px;overflow:hidden">
+      <div style="height:10px;width:${p|0}%;background:#2d6cdf"></div>
+    </div>
+    <div class="muted" style="margin-top:4px">${l} • ${p|0}%</div>
+  </div>`;
+}
+function phasePill(phase){
+  const bg = phase==='ready' ? '#16381f' :
+             phase==='blocked' ? '#3a1818' :
+             phase==='error' ? '#3a1717' :
+             phase==='mvs' ? '#153024' :
+             phase==='convert' ? '#332418' : '#182338';
+  return `<span class="pill" style="background:${bg}">${phase}</span>`;
+}
+async function buildCard(it){
+  const glb=`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/model.glb`;
+  const usdz=`https://${cfg.owner}.github.io/${cfg.repo}/items/${it.id}/model.usdz`;
+  const exists=await fetch(glb,{method:'HEAD'}).then(r=>r.ok).catch(()=>false);
+
+  let s={phase:exists?'ready':(it.status||'processing'),percent:exists?100:0,msg:exists?'Pronto':'In lavorazione'};
+  try{
+    const sj=await fetch(statusURL(it.id)).then(r=>r.ok?r.json():null);
+    if(sj) s=sj;
+  }catch{}
+
+  const card=document.createElement('div');card.className='card';
+  card.innerHTML=`<div class="row">
+    <div class="left">
+      <h3 style="margin:0">${it.title||it.id} ${phasePill(s.phase)}</h3>
+      <div>Stato: <code>${s.phase}</code></div>
+      <div>ID: <code>${it.id}</code></div>
+      <div class="muted">${new Date(it.createdAt).toLocaleString()}</div>
+      ${progressBar(s.percent||0,s.msg||s.phase)}
+      <div style="margin-top:8px"><img src="${qrURL(it.id)}" alt="QR"></div>
+      <div style="margin-top:8px">
+        <a href="${viewURL(it.id)}" target="_blank">Pagina pubblica ▶</a>
+      </div>
+      <div class="muted" style="margin-top:8px">Varianti: <a href="${glb}" target="_blank">GLB</a> · <a href="${usdz}" target="_blank">USDZ</a></div>
+    </div>
+    <div class="right">
+      ${exists?`<model-viewer src="${glb}" ios-src="${usdz}" camera-controls shadow-intensity="0.7" environment-image="neutral" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>`:`<div class="muted">In lavorazione…</div>`}
+    </div>
+  </div>`;
+  return card;
+}
+async function loadList(){
+  if(!cfg.owner||!cfg.repo){
+    document.getElementById('list').innerHTML='<div class="card">Configura il repo in ⚙️ Impostazioni.</div>';return;
+  }
+  const idxUrl=`https://raw.githubusercontent.com/${cfg.owner}/${cfg.repo}/${cfg.branch}/data/index.json?${Date.now()}`;
+  const index=await fetch(idxUrl).then(r=>r.ok?r.json():[]);
+  index.sort((a,b)=>b.createdAt-a.createdAt);
+  k_items.textContent=index.filter(x=>x.status==='ready').length;
+  k_inprogress.textContent=index.filter(x=>x.status!=='ready').length;
+  const list=document.getElementById('list');list.innerHTML='';
+  for(const it of index){const card=await buildCard(it);list.appendChild(card);}
+}
+loadList();setInterval(loadList,10000);
+</script>
+</body>
+</html>
