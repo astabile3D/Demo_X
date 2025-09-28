@@ -2,71 +2,157 @@
 <html lang="it">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Admin – Piatti 3D</title>
+<title>Dashboard – Piatti 3D</title>
 <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 <style>
-  body{font:14px system-ui;margin:0;background:#0e0e0e;color:#eee}
-  header{padding:12px 16px;border-bottom:1px solid #333}
+  :root{--bg:#0e0e0e;--card:#151515;--b:#2a2a2a;--txt:#eee;--accent:#2d6cdf}
+  *{box-sizing:border-box}
+  body{font:14px system-ui;margin:0;background:var(--bg);color:var(--txt)}
+  header{padding:12px 16px;border-bottom:1px solid var(--b);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  header b{font-size:16px}
   main{padding:16px;max-width:1100px;margin:0 auto}
-  .card{border:1px solid #333;border-radius:12px;padding:12px;margin:10px 0;background:#151515}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+  .tab{padding:10px 14px;border:1px solid var(--b);border-radius:10px;background:#141414;cursor:pointer}
+  .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .panel{display:none}
+  .panel.active{display:block}
+  .card{border:1px solid var(--b);border-radius:12px;padding:12px;margin:10px 0;background:var(--card)}
   .row{display:flex;gap:16px;flex-wrap:wrap}
   .left{flex:1 1 280px}
   .right{flex:2 1 480px}
   model-viewer{width:100%;height:420px;background:#000;border-radius:12px}
   code{background:#1d1d1d;padding:2px 6px;border-radius:6px}
+  input,button{font:14px system-ui}
+  input,select{padding:10px;border-radius:10px;border:1px solid var(--b);background:#161616;color:var(--txt);width:100%}
+  button{padding:10px 14px;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+  button.secondary{background:#262626}
+  .thumbs img{width:70px;height:70px;object-fit:cover;margin:4px;border-radius:8px;border:1px solid var(--b)}
+  video{width:100%;max-width:520px;border-radius:12px;background:#000}
+  .muted{opacity:.8}
 </style>
 </head>
 <body>
-<header><b>Admin – Piatti 3D</b></header>
+<header>
+  <b>Dashboard – Piatti 3D</b>
+</header>
 <main>
-  <div id="list"></div>
+  <div class="tabs">
+    <div class="tab active" data-tab="capture">Cattura</div>
+    <div class="tab" data-tab="list">Elenco</div>
+  </div>
+
+  <!-- Panel: Cattura -->
+  <section id="panel-capture" class="panel active">
+    <div class="card">
+      <h3 style="margin-top:0">Nuova cattura</h3>
+      <input id="title" placeholder="Nome piatto">
+      <div style="margin:8px 0" class="muted">Scatta 40–80 foto attorno al piatto</div>
+      <video id="cam" playsinline muted></video>
+      <div>
+        <button id="start">Apri Fotocamera</button>
+        <button id="shot" class="secondary" disabled>Scatta</button>
+        <button id="finish" disabled>Finito & Carica</button>
+      </div>
+      <div id="thumbs" class="thumbs"></div>
+      <div id="status" class="muted"></div>
+    </div>
+  </section>
+
+  <!-- Panel: Elenco -->
+  <section id="panel-list" class="panel">
+    <div id="list"></div>
+  </section>
 </main>
 
-<script>
-// Sostituisci OWNER/REPO con i valori del tuo repo GitHub Pages
-const repoOwner = "astabile3D";
-const repoName  = "Demo_X";
+<script type="module">
+// CONFIG
+const repoOwner = "astabile3D";   // <-- il tuo user
+const repoName  = "Demo_X";       // <-- il tuo repo
 const branch    = "main";
+const token     = new URL(location.href).hash.split('token=')[1] || "";
 
-async function fetchJSON(url){ const r=await fetch(url); if(!r.ok) return null; return r.json(); }
-function qrURL(id){ return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(viewURL(id))}`; }
-function viewURL(id){ return `https://${repoOwner}.github.io/${repoName}/items/${id}/index.html`; }
+// TABS
+document.querySelectorAll('.tab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-'+t.dataset.tab).classList.add('active');
+    if (t.dataset.tab==='list') loadList();
+  };
+});
 
-async function load(){
-  const idxUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/data/index.json?${Date.now()}`;
-  const index = (await fetchJSON(idxUrl))||[];
-  index.sort((a,b)=>b.createdAt-a.createdAt);
+// ---- CATTURA ----
+const cam=document.getElementById('cam'),btnStart=document.getElementById('start'),
+btnShot=document.getElementById('shot'),btnFinish=document.getElementById('finish'),
+thumbs=document.getElementById('thumbs'),statusEl=document.getElementById('status'),
+titleEl=document.getElementById('title');
+let stream=null,shots=[];
+function setStatus(t){statusEl.textContent=t;}
+function b64(buf){return btoa(String.fromCharCode(...new Uint8Array(buf)));}
 
-  const list = document.getElementById('list'); list.innerHTML='';
-  for (const it of index){
-    const glbURL = `https://${repoOwner}.github.io/${repoName}/items/${it.id}/model.glb`;
-    const exists = await fetch(glbURL,{method:'HEAD'}).then(r=>r.ok).catch(()=>false);
-    const status = exists ? 'ready' : (it.status||'processing');
-
-    const card=document.createElement('div'); card.className='card';
-    card.innerHTML = `
-      <div class="row">
-        <div class="left">
-          <h3 style="margin:0">${it.title||it.id}</h3>
-          <div>Stato: <code>${status}</code></div>
-          <div>ID: <code>${it.id}</code></div>
-          <div style="margin-top:8px">
-            <img src="${qrURL(it.id)}" alt="QR">
-          </div>
-          <div style="margin-top:8px">
-            <a href="${viewURL(it.id)}" target="_blank">Apri pagina pubblica ▶</a>
-          </div>
-        </div>
-        <div class="right">
-          ${exists ? `<model-viewer src="${glbURL}" camera-controls shadow-intensity="0.7" environment-image="neutral" ar ar-modes="webxr scene-viewer quick-look"></model-viewer>`
-                   : `<div style="opacity:.8">In lavorazione… aggiorna tra poco.</div>`}
-        </div>
-      </div>
-    `;
-    list.appendChild(card);
-  }
+btnStart.onclick=async()=>{
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  cam.srcObject=stream; await cam.play();
+  btnShot.disabled=false;btnFinish.disabled=false;btnStart.disabled=true;
+};
+btnShot.onclick=async()=>{
+  const track=cam.srcObject.getVideoTracks()[0];const cap=new ImageCapture(track);
+  const bmp=await cap.grabFrame();const c=document.createElement('canvas');c.width=bmp.width;c.height=bmp.height;
+  c.getContext('2d').drawImage(bmp,0,0);
+  const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));
+  shots.push(blob);const img=document.createElement('img');img.src=URL.createObjectURL(blob);thumbs.appendChild(img);
+  setStatus(`Foto scattate: ${shots.length}`);
+};
+async function githubRequest(path,method,body){
+  const r=await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}`,{
+    method,headers:{'Authorization':`token ${token}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});
+  if(!r.ok)throw new Error(await r.text());return r.json();
 }
-load();
+async function getFileSha(path){
+  const r=await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${path}?ref=${branch}`,{headers:{'Authorization':`token ${token}`}});
+  if(r.status===404)return null;const j=await r.json();return j.sha;
+}
+btnFinish.onclick=async()=>{
+  const id=(Date.now().toString(36)+Math.random().toString(36).slice(2,7)).toLowerCase();
+  const base=`uploads/${id}`;const title=(titleEl.value||"Piatto").trim();
+  await githubRequest(`${base}/README.txt`,'PUT',{message:`create ${base}`,branch,content:btoa("upload in progress")});
+  let idx=0;for(const blob of shots){const buf=await blob.arrayBuffer();
+    const name=`img_${String(idx++).padStart(4,'0')}.jpg`;
+    await githubRequest(`${base}/${name}`,'PUT',{message:`upload ${name}`,branch,content:b64(buf)});}
+  let index=[],sha=null;try{const r=await fetch(`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/data/index.json?${Date.now()}`);if(r.ok)index=await r.json();}catch{}
+  sha=await getFileSha('data/index.json');index.push({id,title,status:'queued',createdAt:Date.now()});
+  await githubRequest('data/index.json','PUT',{message:`index add ${id}`,branch,content:btoa(unescape(encodeURIComponent(JSON.stringify(index,null,2)))),sha});
+  setStatus("Fatto! Ora controlla in Elenco.");document.querySelector('.tab[data-tab="list"]').click();
+};
+
+// ---- ELENCO ----
+async function fetchJSON(url){const r=await fetch(url);if(!r.ok)return null;return r.json();}
+function qrURL(id){return `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(viewURL(id))}`;}
+function viewURL(id){return `https://${repoOwner}.github.io/${repoName}/items/${id}/index.html`;}
+function statusURL(id){return `https://${repoOwner}.github.io/${repoName}/items/${id}/status.json?${Date.now()}`;}
+function progressBarHTML(p,l){return `<div style="margin-top:8px"><div style="height:10px;background:#222;border-radius:8px"><div style="height:10px;width:${p|0}%;background:#2d6cdf"></div></div><div class="muted" style="margin-top:4px">${l} • ${p|0}%</div></div>`;}
+async function buildCard(it){
+  const glbURL=`https://${repoOwner}.github.io/${repoName}/items/${it.id}/model.glb`;
+  const exists=await fetch(glbURL,{method:'HEAD'}).then(r=>r.ok).catch(()=>false);
+  let s={phase:exists?'ready':it.status||'processing',percent:exists?100:0,msg:'In lavorazione'};
+  try{const j=await fetchJSON(statusURL(it.id));if(j)s=j;}catch{}
+  const card=document.createElement('div');card.className='card';
+  card.innerHTML=`<div class="row"><div class="left"><h3>${it.title||it.id}</h3>
+    <div>Stato: <code>${s.phase}</code></div><div>ID: <code>${it.id}</code></div>
+    ${progressBarHTML(s.percent||0,s.msg||s.phase)}
+    <div style="margin-top:8px"><img src="${qrURL(it.id)}"></div>
+    <div style="margin-top:8px"><a href="${viewURL(it.id)}" target="_blank">Apri pagina ▶</a></div></div>
+    <div class="right">${exists?`<model-viewer src="${glbURL}" camera-controls shadow-intensity="0.7" environment-image="neutral" ar>`:`<div class="muted">Elaborazione…</div>`}</div></div>`;
+  return card;
+}
+async function loadList(){
+  const idxUrl=`https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/data/index.json?${Date.now()}`;
+  const index=(await fetchJSON(idxUrl))||[];index.sort((a,b)=>b.createdAt-a.createdAt);
+  const list=document.getElementById('list');list.innerHTML='';
+  for(const it of index){const card=await buildCard(it);list.appendChild(card);}
+}
+loadList();setInterval(loadList,10000);
 </script>
 </body>
 </html>
