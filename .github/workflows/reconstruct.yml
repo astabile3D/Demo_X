@@ -54,6 +54,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
+      # ⬇️ NUOVI STEP per PIL/Pillow prima di usare lo script Python nello "Prepare"
+      - name: Setup Python (for image prepare)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Pillow (for image prepare)
+        shell: bash
+        run: |
+          set -e
+          python -m pip install --upgrade pip
+          pip install pillow
+
       - name: Prepare images & validate thresholds (10%)
         id: prepare
         shell: bash
@@ -73,7 +86,7 @@ jobs:
             cp "$f" "work/$ID/tmpconv/"
           done < <(find "uploads/$ID" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) -print0)
 
-          # Conversione/normalizzazione a JPG max lato 4096
+          # Conversione/normalizzazione a JPG max lato 4096 (usa Pillow che ora è installato)
           python - <<'PY'
           import os
           from PIL import Image
@@ -167,13 +180,13 @@ jobs:
           git commit -m "[skip ci] status $ID 65%" || true
           git push || (git pull --rebase && git push) || true
 
-      - name: Setup Python
+      - name: Setup Python (for GLB conversion)
         if: steps.prepare.outputs.proceed == 'yes'
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install Python deps
+      - name: Install Python deps (GLB conversion)
         if: steps.prepare.outputs.proceed == 'yes'
         shell: bash
         run: |
