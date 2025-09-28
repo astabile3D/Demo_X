@@ -20,15 +20,12 @@ jobs:
         shell: bash
         run: |
           set -e
-          # 1) file modificati in questo commit
           ID=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" | grep '^uploads/' | head -n1 | cut -d'/' -f2 || true)
-          # 2) fallback
           if [ -z "$ID" ]; then
             ID=$(git show --name-only --pretty="" "$GITHUB_SHA" | grep '^uploads/' | head -n1 | cut -d'/' -f2 || true)
           fi
-          # 3) ultimo folder in uploads
           if [ -z "$ID" ]; then
-            ID=$(ls -1 uploads | head -n1 || true)
+            ID=$(ls -1 uploads 2>/dev/null | head -n1 || true)
           fi
           echo "id=$ID" >> "$GITHUB_OUTPUT"
           test -n "$ID"
@@ -58,7 +55,7 @@ jobs:
           ID=${{ steps.detect.outputs.id }}
           mkdir -p work/"$ID"/images
 
-          # Copia JPG esistenti
+          # Copia JPG se presenti
           ls uploads/"$ID"/images/*.jpg 2>/dev/null && cp -R uploads/"$ID"/images/*.jpg work/"$ID"/images/ || true
           ls uploads/"$ID"/*.jpg 2>/dev/null && cp -R uploads/"$ID"/*.jpg work/"$ID"/images/ || true
 
@@ -74,12 +71,16 @@ jobs:
           fi
 
           COUNT=$(ls work/"$ID"/images/*.jpg 2>/dev/null | wc -l | tr -d ' ')
+
+          # aggiorna status a 10%
+          export ID
           python - <<'PY'
-import json, os
-id = os.environ.get("ID")
-p = f"items/{id}/status.json"
-open(p, "w").write(json.dumps({"phase":"prepare","percent":10,"msg":"Preparo immagini…"}))
-PY
+          import json, os
+          id = os.environ.get("ID")
+          p = f"items/{id}/status.json"
+          open(p, "w").write(json.dumps({"phase":"prepare","percent":10,"msg":"Preparo immagini…"}))
+          PY
+
           git add items/"$ID"/status.json
           git commit -m "[skip ci] status $ID 10%" || true
           git push || true
@@ -99,12 +100,16 @@ PY
             --fast-orthophoto \
             --texturing-nadir-weight 16 \
             --optimize-disk-space || true
+
+          # aggiorna status a 65%
+          export ID
           python - <<'PY'
-import json, os
-id = os.environ.get("ID")
-p = f"items/{id}/status.json"
-open(p, "w").write(json.dumps({"phase":"mvs","percent":65,"msg":"Densificazione e mesh…"}))
-PY
+          import json, os
+          id = os.environ.get("ID")
+          p = f"items/{id}/status.json"
+          open(p, "w").write(json.dumps({"phase":"mvs","percent":65,"msg":"Densificazione e mesh…"}))
+          PY
+
           git add items/"$ID"/status.json
           git commit -m "[skip ci] status $ID 65%" || true
           git push || true
@@ -127,12 +132,16 @@ PY
           mkdir -p items/"$ID"
           python scripts/prepare_glb.py "work/$ID/code/odm_texturing/odm_textured_model.obj" "items/$ID/model.glb"
           cp items_template/index.html items/"$ID"/index.html || true
+
+          # aggiorna status a 85%
+          export ID
           python - <<'PY'
-import json, os
-id = os.environ.get("ID")
-p = f"items/{id}/status.json"
-open(p, "w").write(json.dumps({"phase":"convert","percent":85,"msg":"Conversione GLB…"}))
-PY
+          import json, os
+          id = os.environ.get("ID")
+          p = f"items/{id}/status.json"
+          open(p, "w").write(json.dumps({"phase":"convert","percent":85,"msg":"Conversione GLB…"}))
+          PY
+
           git add items/"$ID"/status.json items/"$ID"/index.html items/"$ID"/model.glb
           git commit -m "[skip ci] status $ID 85% + files" || true
           git push || true
@@ -142,18 +151,22 @@ PY
         run: |
           set -e
           ID=${{ steps.detect.outputs.id }}
+
+          # index.json -> ready e status 100%
+          export ID
           if [ -f data/index.json ]; then
             python - <<'PY'
-import json, os
-id = os.environ.get("ID")
-p = "data/index.json"
-j = json.load(open(p))
-for it in j:
-    if it.get("id") == id:
-        it["status"] = "ready"
-open(p, "w").write(json.dumps(j, indent=2))
-open(f"items/{id}/status.json", "w").write(json.dumps({"phase":"ready","percent":100,"msg":"Pronto"}))
-PY
+            import json, os
+            id = os.environ.get("ID")
+            p = "data/index.json"
+            j = json.load(open(p))
+            for it in j:
+                if it.get("id") == id:
+                    it["status"] = "ready"
+            open(p, "w").write(json.dumps(j, indent=2))
+            open(f"items/{id}/status.json", "w").write(json.dumps({"phase":"ready","percent":100,"msg":"Pronto"}))
+            PY
             git add data/index.json items/"$ID"/status.json
             git commit -m "[skip ci] status $ID 100%" || true
             git push || true
+          fi
